@@ -337,13 +337,14 @@ class Group(Rule):
     """
     
     def __init__(self, grouped_rule):
-      self.__grouped_rule = grouped_rule
+        self.__grouped_rule = grouped_rule
+
       
     def match(self, input_reader):
-      return self.returnToken(self.callAction(self.__grouped_rule.match(input_reader)))
+        return self.returnToken(self.callAction(self.__grouped_rule.match(input_reader)))
       
     def __str__(self):
-      return '(' + str(self.__grouped_rule) + ')'
+        return '(' + str(self.__grouped_rule) + ')'
         
 class Literal(Rule):
     """
@@ -930,6 +931,44 @@ class CallbackParser(Rule):
         else:
             input_reader.rollback()
             raise ParseException('Character did not match %s' % str(self))
+
+class Recursive(Rule):
+    """
+    Rule providing a special interface to define recursive rules.
+    Due to Pythons name binding mechanism, it is impossible to do the following
+    in a way that it works as expected:
+    
+    rule = something + rule + something_else | something_totally_different
+    
+    The expected result would be that rule matches either itself with some
+    surrounding recursivly or something totally different. Sadly that is not
+    what's happening. Either the interpreter complains about rule not being defined
+    or it (if rule is defined beforehand) inserts the old definition of rule
+    into the new one instead making the new one recursive.
+    Rescursive provides an interface to cope with this. Instead of doing
+    
+    rule = ...
+    
+    you use:
+    
+    rule = Recursive()
+    rule.set(...) where ... can contain rule itself and still do the right thing.
+    """
+    
+    def set(self, subrule):
+        """
+        Set the content of this recursive rule.
+        
+        @param subrule: The rule contained in this recursive rule. May contain the rule itself again.
+        """
+        self.__rule = subrule
+      
+    def match(self, input_reader):
+        return self.returnToken(self.callAction(self.__rule.match(input_reader)))
+        
+    def __str__(self):
+        # TODO find useful representation of the rule without creating an endless loop
+        return 'Recursive(...)'
 
 class ErrorRule(Rule):
     """
