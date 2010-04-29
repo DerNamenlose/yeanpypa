@@ -1,0 +1,178 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE article PUBLIC "-//OASIS//DTD DocBook XML V4.1.2//EN"
+  "http://www.oasis-open.org/docbook/xml/4.0/docbookx.dtd">
+  
+<article lang="en">
+  <articleinfo>
+    <author>
+      <firstname>Markus</firstname>
+      <surname>Brückner</surname>
+    </author>
+    <title>yeanpypa &ndash; YEt ANother PYthon PArser framework</title>
+    <abstract>
+      <para>
+        Yeanpypa is a framework written in <ulink
+        url="http://www.python.org/">Python</ulink> and heavily
+        inspired by tools like <ulink
+        url="http://pyparsing.sourceforge.net/">pyparsing</ulink> and
+        <ulink
+        url="http://www.boost.org/libs/spirit/index.html">boost::spirit</ulink>. It
+        can be used to contruct recursive-descent parsers directly in
+        python in a nearly "natural" way, meaning that the necessary
+        Python source code looks much like the original EBNF that
+        defined the grammar.
+      </para>
+    </abstract>      
+  </articleinfo>
+  <section>
+    <title>Introduction</title>
+    <para>
+      This section shows how to get and install yeanpypa, how to use
+      it in own programs and gives some simple (and less simple) usage
+      examples.
+    </para>
+    <section>
+      <title>Getting &amp; installing yeanpypa</title>
+      <para>
+        Yeanpypa can be fetched directly from the Subversion
+        repository at <ulink
+        url="https://vcs.slash-me.net/snippets/yeanpypa/" />. Get the
+        file <filename>yeanpypa.py</filename> and copy it into your
+        Python distribution (normally in some place like
+        <filename>/usr/lib/python2.4/</filename> under Linux, see your
+        distribution's documentation for further details).
+      </para>
+    </section>
+    <section>
+      <title>Using yeanpypa</title>
+      <para>
+        First of all: construct an <ulink
+        url="http://en.wikipedia.org/wiki/EBNF">EBNF</ulink> grammar
+        for the language you'd like to parse. A short example for
+        parsing floating point numbers in C:
+        <example>
+          <title>An example of an EBNF for parsing floating point
+          numbers</title>
+          <programlisting><![CDATA[
+digit  ::= "1" | "2" | "3" | "4" | "5" | "6" | "7" | "9" | "0" ;
+number ::= digit+ ;
+float  ::= [ number ] "." number ;
+          ]]></programlisting>
+        </example>
+        This example defines a digits as one of the set from 0 to 9, a
+        number as at least one digit and a floating point number as an
+        optional number, followed by a dot, followed by a number.
+        <note><para>This definition isn't totally correct as it would
+        allow constructions like "0002.00". For simplicities sake,
+        we'll go with it.</para></note> 
+        In order to construct a yeanpypa-grammar from the EBNF, we
+        write:
+        <example>
+          <title>yeanpypa representation of the floating point
+          parser</title>
+          <programlisting><![CDATA[
+          from yeanpypa import *
+
+digit     = Literal('1') | Literal('2') | Literal('3') | Literal('4') | \
+            Literal('5') | Literal('6') | Literal('7') | Literal('8') | \
+            Literal('9') | Literal('0')
+number    = Word(digit)
+float_num = Optional(number) + Literal('.') + number
+          ]]></programlisting>
+        </example>
+        <note><para>In order to save typing, yeanpypa already provides
+        a set of abstractions. The whole <varname>digit</varname>
+        thing for example could be left out, as it is already provided
+        by yeanpypa.</para></note>
+        The resulting <varname>float_num</varname> object can be used
+        to parse a floating point number like this:
+        <example>
+          <title>Using a parser object</title>
+          <programlisting><![CDATA[
+result = parse(float_num, '123.123')
+if result.full():
+    print result.getTokens()
+else:
+    print 'The parser did not consume all input.'
+          ]]></programlisting>
+        </example>
+        This will print the following:
+        <screen>['123', '.', '123']</screen>
+        The parser validated the input and created a list of token
+        according to the grammar specification. 
+      </para>
+      <para>
+        In order to use the token, we can ignore the dot, as it does
+        not tell us anything apart from the fact that we saw a
+        floating point number (which we know because of the validation
+        anyway). That's where <command>hide()</command> comes into
+        play. The <command>hide()</command> method of a rule (the
+        basic building block of a grammar) tells the parser to ignore
+        any token created by the rule. We change the grammar like
+        this:
+        <example>
+          <title>Floating point parser ignoring the dot</title>
+          <programlisting><![CDATA[
+number    = Word(digit)
+float_num = Optional(number) + Literal('.').hide() + number
+          ]]></programlisting>
+        </example>
+        <note><para>We removed the <varname>digit</varname>
+        declaration and rather use the abstraction provided by
+        yeanpypa.</para></note>
+        Note the <command>hide()</command>-call at the
+        <command>Literal(...)</command>-rule. This instructs the
+        parser to ignore the token created by that rule (i.e. the '.')
+        and not create any output.
+      </para>
+      <para>
+        Using this parser yields the following output:
+        <screen>['123', '123']</screen>
+        We have successfully eliminated the superfluous dot token from
+        the output.
+      </para>
+      <para>
+        As we're parsing numbers, we would like to see the token as
+        actual numbers instead of strings representing
+        numbers. Yeanpypa provides the tools to transform the strings
+        while matching using a semantic action:
+        <example>
+          <title>Floating point parser using semantic actions</title>
+          <programlisting><![CDATA[
+number    = Word(digit).setAction(lambda x: int(x[0]))
+float_num = Optional(number) + Literal('.').hide() + number
+          ]]></programlisting>
+        </example>
+        We have attached a semantic action to the
+        <varname>number</varname>-rule, which transforms its input
+        from a string into an integer. The action is called when the
+        rule sucessfully matches and gets a list of token generated by
+        that rule. The function must return a list of token
+        representing the desired output of the parser. This may be the
+        original input list (in case the action merely outputs some
+        debug information or generates some external data structure)
+        or it may be a transformed token (list) as in the example
+        given.
+      </para>
+      <para>
+        Using this version of the parser yields the following output:
+        <screen>[123, 123]</screen>        
+        As you can see, the result token list now contains two
+        integers instead of string representing them.
+        <note><para>Attaching an action to a rule where
+        <command>hide()</command> was called causes the action to be
+        executed, but the output to be thrown away. Keep that in mind
+        if you intend to mix these two facilities.</para></note>
+        <note><para>An action called for a subrule will
+        <emphasis>NOT</emphasis> be notified if the containing rule
+        fails at a later stage. E.g. if the first
+        <varname>number</varname> rule in the above example matched,
+        but <varname>float_num</varname> failed due to a missing dot,
+        the action of the first <varname>number</varname> would
+        already have been called and would not be notified about the
+        failure. Keep that in mind when constructing external data
+        structures using semantic actions.</para></note>
+      </para>
+    </section>
+  </section>
+</article>

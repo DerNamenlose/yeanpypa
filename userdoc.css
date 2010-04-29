@@ -1,0 +1,32 @@
+body
+{
+  padding-left:  1cm;
+  padding-right: 1cm;
+  width:        100ex;
+}
+
+div.example
+{
+  margin-left:  0.5in;
+  margin-right: 0.5in;
+}
+
+pre.programlisting {
+  background-color: #FFFFA0;
+  border-width: 1px;
+  border-style: solid;
+  border-color: #000000;
+}
+
+p {
+  text-align: justify;
+}
+
+div.abstract {
+  margin-left:  5em;
+  margin-right: 5em;
+}
+
+div.note {
+  background-color: #C0C0C0;
+}
