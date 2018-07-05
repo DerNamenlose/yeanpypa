@@ -35,12 +35,13 @@ class InputReader(object):
         self.__string       = string
         self.__ignore_white = ignore_white
         self.line           = 1
+        self.linePos        = 1
 
     def getPos(self):
         """
         Return the current position of this reader
 
-        @return: the current position of the reader in the string
+        @return the current position of the reader in the string
         """
         return self.__current_pos
 
@@ -52,9 +53,13 @@ class InputReader(object):
         while (self.__current_pos < len(self.__string) and self.__string[self.__current_pos].isspace()):
             if self.__string[self.__current_pos] == '\n': # TODO handle \r and \r\n correctly, get position in the line correctly
                 self.line += 1
+                self.linePos = 0
             if self.__string[self.__current_pos] == '\r' and self.__current_pos + 1 < len(self.__string) and self.__string[self.__current_pos + 1] != '\n':
+                print ("counted r")
                 self.line += 1
+                self.linePos = 0
             self.__current_pos += 1
+            self.linePos += 1
 
     def getInput(self):
         """
@@ -71,7 +76,7 @@ class InputReader(object):
 
         @param length: The length of the string to return
         @type  length: int
-        @return:       A substring of the given length.
+        @return       A substring of the given length.
         """
         if self.__ignore_white:
             self.skipWhite()
@@ -79,13 +84,16 @@ class InputReader(object):
             raise EndOfStringException()
         start = self.__current_pos
         self.__current_pos += length
+        self.linePos += length
         substring = self.__string[start:self.__current_pos]
         counter = 0
         for i in substring:
             if i == '\n':
                 self.line += 1
+                self.linePos = 0
                 if i == '\r' and counter + 1 < len(substring) and substring[counter + 1] != '\n':
                     self.line += 1  # TODO this possibly fails if \r\n is across the string end
+                    self.linePos = 0
         return substring
 
     def getChar(self):
@@ -94,7 +102,7 @@ class InputReader(object):
         This methdo returns the next character of the string. If ignore_whitespace
         is True, this will be the next non-whitespace character.
 
-        @return: The next character of the string.
+        @return The next character of the string.
         """
         if self.__current_pos == len(self.__string):
             raise EndOfStringException()
@@ -104,9 +112,13 @@ class InputReader(object):
         char = self.__string[self.__current_pos]
         if char == '\n':
             self.line += 1
+            self.linePos = 0
         if char == '\r' and self.__current_pos + 1 < len(self.__string) and self.__string[self.__current_pos + 1] != '\n':
+            print ("counted r")
             self.line += 1
+            self.linePos = 0
         self.__current_pos += 1
+        self.linePos += 1
         return char
 
     def checkPoint(self):
@@ -116,7 +128,7 @@ class InputReader(object):
         The checkpoints are managed in a stack-like fashion: the parser can always return
         to the last checkpoint set.
         """
-        self.__stack.append((self.__current_pos, self.line))
+        self.__stack.append((self.__current_pos, self.line, self.linePos))
 
     def rollback(self):
         """
@@ -128,6 +140,7 @@ class InputReader(object):
             raise EmptyStackException()
         self.__current_pos = self.__stack[-1][0]
         self.line = self.__stack[-1][1]
+        self.linePos = self.__stack[-1][2]
         self.__stack = self.__stack[:-1]
 
     def deleteCheckpoint(self):
@@ -152,7 +165,7 @@ class InputReader(object):
         """
         Return whether the reader is set to ignore whitespaces.
 
-        @return: True if the reader currently ignores whitespaces, False otherwise.
+        @return True if the reader currently ignores whitespaces, False otherwise.
         """
         return self.__ignore_white
 
@@ -172,14 +185,17 @@ class ParseException(Exception):
     readable message that further explains the reason of the
     exception.
     """
-    def __init__(self, msg):
+    def __init__(self, msg, final=False):
         """
         Initialize the exception with the given message.
 
         @param msg: The message further describing the reason for this exception.
         @type msg:  str
+        @param final: This exception is a non-recoverable one (mainly created by ErrorRule).
+        @type final: bool
         """
         self.__msg = msg
+        self.final = final
 
     def __str__(self):
         """
@@ -214,6 +230,7 @@ class ParseResult(object):
         """
         self.__input_reader = input_reader
         self.__token = token
+        self.error = None
 
     def full(self):
         """
@@ -268,10 +285,12 @@ class Rule(object):
             print("Try: %s"%str(self))
             try:
                 m = self.__match(input_reader)
-                logging.debug("Done %s"%str(self))
+                print('Match of rule type %s'%type(self))
+                print(type(m))
+                print("Done %s. Matched %s"%(str(self),str(m)))
                 return m
             except ParseException:
-                logging.debug("%s failed"%str(self))
+                print("%s failed at line %d:%d"%(str(self),input_reader.line, input_reader.linePos))
                 raise
         else:
             return self.__match(input_reader)
@@ -421,7 +440,7 @@ class Literal(Rule):
             string = input_reader.getString(len(self.__string))
             if string != self.__string:
                 input_reader.rollback()
-                raise ParseException("Expected '%s' at position %d, line %d. Got '%s'" % (self.__string, input_reader.getPos(), input_reader.line, string))
+                raise ParseException("Expected '%s' at position %d, line %d:%d. Got '%s'" % (self.__string, input_reader.getPos(), input_reader.line, input_reader.linePos, string))
         except EndOfStringException:
             input_reader.rollback()
             raise ParseException("Expected '%s' at end of string" % self.__string)
@@ -469,10 +488,10 @@ class AnyOf(Rule):
             char = input_reader.getChar()
             if not (char in self.__set):
                 input_reader.rollback()
-                raise ParseException("Expected char from: [%s] at line %d:%d, got '%s'" % (self.__set, input_reader.line, input_reader.getPos(), str(char)))
+                raise ParseException("Expected char from: [%s] at line %d:%d, got '%s'" % (self.__set, input_reader.line, input_reader.linePos, str(char)))
         except EndOfStringException:
             input_reader.rollback()
-            raise ParseException("Expected char from: [%s] at line %d:%d" % (self.__set, input_reader.line, input_reader.getPos()))
+            raise ParseException("Expected char from: [%s] at line %d:%d" % (self.__set, input_reader.line, input_reader.linePos))
         input_reader.deleteCheckpoint()
         logging.debug("Matched %s" % char)
         return self.returnToken(self.callAction([char]))
@@ -581,20 +600,18 @@ class AndRule(Rule):
                     if result != None:
                         retval.append(result)
             input_reader.deleteCheckpoint()
-        except ParseException:
-            input_reader.rollback()
+        except ParseException as e:
+            if not e.final:
+                input_reader.rollback()
             raise
         return self.returnToken(self.callAction(retval))
 
-    def autorule(self, rule):
+    def autoRule(self, rule):
         """
         insert a rule that is automatically matched after every sub-rule
-        This is useful e.g. for matching comments possibly after every token of an AndRule.
-        As a rule of thumb auto rules should not return any token. While they will be
-        included in the output of this rule, that might prove to cause interesting
-        and unforseen effects which make the rule set harder to understand.
+        This is useful e.g. for matching comments.
         """
-        self.__autorule = rule # TODO this could apply to other rules also (e.g. ZeroOrMore or similar)
+        self.__autorule = rule
         return self
 
 # TODO: implement a greedy version of the OR rule (matches the longer match of the two)
@@ -655,10 +672,12 @@ class OrRule(Rule):
                 rule_match = rule.match(input_reader)
                 input_reader.deleteCheckpoint()
                 return self.returnToken(self.callAction(rule_match))
-            except ParseException:
+            except ParseException as e:
+                if e.final:
+                    raise
                 pass
         input_reader.rollback()
-        raise ParseException("None of the subrules of %s matched." % str(self))
+        raise ParseException("At %d:%d, none of the subrules of %s matched." %(input_reader.line, input_reader.linePos,str(self)))
 
 class Optional(Rule):
     """
@@ -695,7 +714,9 @@ class Optional(Rule):
             rule_match = self.__rule.match(input_reader)
             logging.debug("Matched %s" % self)
             return self.returnToken(self.callAction(rule_match))
-        except ParseException:
+        except ParseException as e:
+            if e.final:
+                raise
             pass
 
 class OneOrMore(Rule):
@@ -742,7 +763,9 @@ class OneOrMore(Rule):
               if input_reader.getIgnoreState():
                 input_reader.skipWhite()
               retval.append(self.__rule.match(input_reader))
-        except ParseException:
+        except ParseException as e:
+            if e.final:
+                raise
             pass
         return self.returnToken(self.callAction(retval))
 
@@ -1046,8 +1069,9 @@ class ErrorRule(Rule):
     to be used directly. Use the predefined variable error instead.
     """
 
-    def __init__(self):
+    def __init__(self, message):
         Rule.__init__(self)
+        self.__message = message
 
     def __str__(self):
         """
@@ -1055,7 +1079,7 @@ class ErrorRule(Rule):
 
         @return: A human-readable description of this rule.
         """
-        return "ErrorRule()"
+        return "Error: %s"%self.__message
 
     def match(self, input_reader):
         """
@@ -1063,15 +1087,36 @@ class ErrorRule(Rule):
         to raise an exception, this method does not read anything but throws
         an error immediately.
         """
-        raise ParseException('Hit ErrorRule()')
-
+        raise ParseException('Error: %s, at line %d:%d'%(self.__message,input_reader.line, input_reader.linePos), True)
+noeol    = NoneOf('\n')
+linechar      = AnyOf('abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-., ():=!')
+extchar       = AnyOf('abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-.,')
+extchar_space = AnyOf('abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-., <>*/+-=\'()!~#')
 alpha    = CallbackParser(lambda char: char.isalpha())
 digit    = CallbackParser(lambda char: char.isdigit())
+extfloat = AnyOf('0123456789-+.')
+extcalpha= AnyOf('abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ_')
 calpha   = AnyOf('abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ')
 integer  = Word(digit).setAction(lambda i: int(i[0]))
-fp       = Combine(Word(digit)+Literal('.')+Word(digit)).setAction(lambda f: f[0]) # TODO make this more adapted to other languages using , etc.
+fp       = Word(extfloat).setAction(lambda f: float(f[0]))
 hexdigit = AnyOf('0123456789abcdefABCDEF')
-error    = ErrorRule()
+quote    = Literal('"').hide()                                                  # extra rule, because using this in compiler kills doxygen inline commenting
+
+
+def error(msg):
+    """
+    create an ErrorRule with the given message
+    """
+    return ErrorRule(msg)
+
+def definitive(rule,msg):
+    """
+    mark a rule as definitive (i.e. fail non-recoverably if that rule does not match
+
+    @param rule: The rule to mark
+    @param msg: The failure message given if the rule does not match
+    """
+    return rule | error(msg)
 
 def parse(parser, string, ignore_white=True, trace=False):
     """
@@ -1091,7 +1136,13 @@ def parse(parser, string, ignore_white=True, trace=False):
     """
     input_reader = InputReader(string, ignore_white)
     input_reader.trace = trace
-    tokens = parser.match(input_reader)
-    parseResult = ParseResult(input_reader, tokens)
+    tokens = []
+    try:
+        tokens = parser.match(input_reader)
+        parseResult = ParseResult(input_reader, tokens)
+    except ParseException as e:
+        parseResult = ParseResult(input_reader, tokens)
+        parseResult.error = e
     parseResult.line = input_reader.line
+    parseResult.linePos = input_reader.linePos
     return parseResult
